@@ -36,8 +36,9 @@ contract FundMeTest is StdCheats, Test {
     }
 
     function testFundFailsWithoutEnoughETH() public {
-        vm.expectRevert();
-        fundMe.fund();
+        vm.expectRevert();//hey the next line sgould revert!
+        //assert(this tx fails/reverts)
+        fundMe.fund();//send 0 value to the fund function
     }
 
     function testFundUpdatesFundedDataStructure() public {
@@ -103,9 +104,10 @@ contract FundMeTest is StdCheats, Test {
         uint160 startingFunderIndex = 2;
         for (uint160 i = startingFunderIndex; i < numberOfFunders + startingFunderIndex; i++) {
             // we get hoax from stdcheats
-            // prank + deal
+            // (prank + deal )== hoax
             hoax(address(i), STARTING_USER_BALANCE);
             fundMe.fund{value: SEND_VALUE}();
+            
         }
 
         uint256 startingFundMeBalance = address(fundMe).balance;
