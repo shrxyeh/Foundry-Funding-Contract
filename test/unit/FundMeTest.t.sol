@@ -4,11 +4,13 @@ pragma solidity 0.8.19;
 
 import {DeployFundMe} from "../../script/DeployFundMe.s.sol";
 import {FundMe} from "../../src/FundMe.sol";
-import {HelperConfig} from "../../script/HelperConfig.s.sol";
+import {HelperConfig, CodeConstants} from "../../script/HelperConfig.s.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
+import {ZkSyncChainChecker} from "lib/foundry-devops/src/ZkSyncChainChecker.sol";
+import {MockV3Aggregator} from "../mock/MockV3Aggregator.sol";
 
-contract FundMeTest is StdCheats, Test {
+contract FundMeTest is ZkSyncChainChecker, CodeConstants, StdCheats, Test {
     FundMe public fundMe;
     HelperConfig public helperConfig;
 
@@ -23,25 +25,29 @@ contract FundMeTest is StdCheats, Test {
     // uint256 public constant SEND_VALUE = 1000000000000000000;
 
     function setUp() external {
-        DeployFundMe deployer = new DeployFundMe();
-        (fundMe, helperConfig) = deployer.run();
+        if (!isZkSyncChain()) {
+            DeployFundMe deployer = new DeployFundMe();
+            (fundMe, helperConfig) = deployer.deployFundMe();
+        } else {
+            MockV3Aggregator mockPriceFeed = new MockV3Aggregator(DECIMALS, INITIAL_PRICE);
+            fundMe = new FundMe(address(mockPriceFeed));
+        }
         vm.deal(USER, STARTING_USER_BALANCE);
     }
 
-    function testPriceFeedSetCorrectly() public {
+    function testPriceFeedSetCorrectly() public skipZkSync {
         address retreivedPriceFeed = address(fundMe.getPriceFeed());
         // (address expectedPriceFeed) = helperConfig.activeNetworkConfig();
-        address expectedPriceFeed = helperConfig.activeNetworkConfig();
+        address expectedPriceFeed = helperConfig.getConfigByChainId(block.chainid).priceFeed;
         assertEq(retreivedPriceFeed, expectedPriceFeed);
     }
 
-    function testFundFailsWithoutEnoughETH() public {
-        vm.expectRevert();//hey the next line sgould revert!
-        //assert(this tx fails/reverts)
-        fundMe.fund();//send 0 value to the fund function
+    function testFundFailsWithoutEnoughETH() public skipZkSync{
+        vm.expectRevert();
+        fundMe.fund();
     }
 
-    function testFundUpdatesFundedDataStructure() public {
+    function testFundUpdatesFundedDataStructure() public skipZkSync{
         vm.startPrank(USER);
         fundMe.fund{value: SEND_VALUE}();
         vm.stopPrank();
@@ -50,7 +56,7 @@ contract FundMeTest is StdCheats, Test {
         assertEq(amountFunded, SEND_VALUE);
     }
 
-    function testAddsFunderToArrayOfFunders() public {
+    function testAddsFunderToArrayOfFunders() public skipZkSync{
         vm.startPrank(USER);
         fundMe.fund{value: SEND_VALUE}();
         vm.stopPrank();
@@ -68,12 +74,13 @@ contract FundMeTest is StdCheats, Test {
         _;
     }
 
-    function testOnlyOwnerCanWithdraw() public funded {
+    function testOnlyOwnerCanWithdraw() public funded skipZkSync{
         vm.expectRevert();
+        vm.prank(address(3)); // Not the owner
         fundMe.withdraw();
     }
 
-    function testWithdrawFromASingleFunder() public funded {
+    function testWithdrawFromASingleFunder() public funded skipZkSync{
         // Arrange
         uint256 startingFundMeBalance = address(fundMe).balance;
         uint256 startingOwnerBalance = fundMe.getOwner().balance;
@@ -99,15 +106,14 @@ contract FundMeTest is StdCheats, Test {
     }
 
     // Can we do our withdraw function a cheaper way?
-    function testWithdrawFromMultipleFunders() public funded {
+    function testWithdrawFromMultipleFunders() public funded skipZkSync{
         uint160 numberOfFunders = 10;
         uint160 startingFunderIndex = 2;
         for (uint160 i = startingFunderIndex; i < numberOfFunders + startingFunderIndex; i++) {
             // we get hoax from stdcheats
-            // (prank + deal )== hoax
+            // prank + deal
             hoax(address(i), STARTING_USER_BALANCE);
             fundMe.fund{value: SEND_VALUE}();
-            
         }
 
         uint256 startingFundMeBalance = address(fundMe).balance;
